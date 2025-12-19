@@ -8,4 +8,4 @@ psycopg2-binary==2.9.9
 tcgm==0.1.4
 pickle5==0.0.12
 gunicorn==21.2.0
-web: gunicorn api_service:app
+werkzeug==3.0.1
