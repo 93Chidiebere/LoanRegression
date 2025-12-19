@@ -300,8 +300,8 @@ print("✓ Model loaded successfully")
 
 # Config
 config = {
-    'model_version': '1.0',
-    'training_date': '2025-12-18',
+    'model_version': '1.1',
+    'training_date': '2025-12-19',
     'c_over': 1.0,
     'c_under': 5.0,
     'feature_names': [
