@@ -10,6 +10,8 @@ import numpy as np
 import pickle
 from datetime import datetime
 import os
+from fastapi.responses import HTMLResponse
+
 
 app = FastAPI(title="Loan Risk Assessment API")
 
@@ -97,21 +99,15 @@ def get_risk_tier_info(risk_score):
     else:
         return ("High Risk", "E", 5.0, "DECLINE", "Significant risk", "#dc3545")
 
-# --------------------------------------------------
-# HTML Templates (unchanged)
-# --------------------------------------------------
 
-from templates import HOME_TEMPLATE, RESULT_TEMPLATE
-# If you prefer single-file deployment:
-# paste HOME_TEMPLATE and RESULT_TEMPLATE here exactly as-is
 
 # --------------------------------------------------
 # Routes
 # --------------------------------------------------
 
-@app.get("/", response_class=HTMLResponse)
-def home():
-    return HOME_TEMPLATE
+# @app.get("/", response_class=HTMLResponse)
+# def home():
+#     return HOME_TEMPLATE  # noqa: F821
 
 @app.post("/assess", response_class=HTMLResponse)
 def assess(
