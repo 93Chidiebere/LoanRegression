@@ -1,113 +1,275 @@
 """
 FastAPI Web Application for Loan Risk Assessment
-No database dependency – Render deployment ready
+• User enters NAIRA values
+• Model internally uses LOG values
+• No database dependency
+• Render deployment ready
 """
 
 from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 import pandas as pd
 import numpy as np
 import pickle
 from datetime import datetime
-import os
-from fastapi.responses import HTMLResponse
 
+# --------------------------------------------------
+# Utilities
+# --------------------------------------------------
 
-app = FastAPI(title="Loan Risk Assessment API")
+def safe_log(x: float) -> float:
+    """Convert naira amount to log safely."""
+    return float(np.log(max(x, 1.0)))
 
-print("Loading model...")
+def safe_exp(x: float) -> float:
+    """Convert log back to naira."""
+    return float(np.exp(x))
+
+# --------------------------------------------------
+# App & Model
+# --------------------------------------------------
+
+app = FastAPI(title="Loan Risk Assessment System")
 
 with open("risk_assessment_pipeline.pkl", "rb") as f:
     pipeline = pickle.load(f)
 
-print("✓ Model loaded successfully")
+FEATURE_NAMES = [
+    "Age", "Experience", "JobTenure", "CreditScore", "PaymentHistory",
+    "LengthOfCreditHistory", "NumberOfOpenCreditLines",
+    "NumberOfCreditInquiries", "PreviousLoanDefaults",
+    "BankruptcyHistory", "UtilityBillsPaymentHistory",
+    "LoanDuration", "BaseInterestRate", "InterestRate",
+    "TotalDebtToIncomeRatio",
+    "MonthlyIncome_log", "AnnualIncome_log",
+    "SavingsAccountBalance_log", "CheckingAccountBalance_log",
+    "NetWorth_log", "TotalAssets_log", "TotalLiabilities_log",
+    "MonthlyLoanPayment_log", "LoanAmount_log",
+    "MonthlyDebtPayments_log",
+    "EmploymentStatus", "EducationLevel", "MaritalStatus",
+    "HomeOwnershipStatus", "LoanPurpose"
+]
 
 # --------------------------------------------------
-# Config
+# UI – HOME PAGE
 # --------------------------------------------------
 
-config = {
-    "model_version": "1.1",
-    "training_date": "2025-12-19",
-    "feature_names": [
-        "Age", "Experience", "JobTenure", "CreditScore", "PaymentHistory",
-        "LengthOfCreditHistory", "NumberOfOpenCreditLines",
-        "NumberOfCreditInquiries", "PreviousLoanDefaults",
-        "BankruptcyHistory", "UtilityBillsPaymentHistory",
-        "LoanDuration", "BaseInterestRate", "InterestRate",
-        "TotalDebtToIncomeRatio", "MonthlyIncome_log",
-        "AnnualIncome_log", "SavingsAccountBalance_log",
-        "CheckingAccountBalance_log", "NetWorth_log",
-        "TotalAssets_log", "TotalLiabilities_log",
-        "MonthlyLoanPayment_log", "LoanAmount_log",
-        "MonthlyDebtPayments_log", "EmploymentStatus",
-        "EducationLevel", "MaritalStatus",
-        "HomeOwnershipStatus", "LoanPurpose"
-    ]
+HOME_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Loan Risk Assessment</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {
+    font-family: Segoe UI, Arial, sans-serif;
+    background: #f2f4f8;
+    padding: 20px;
 }
+.container {
+    max-width: 1000px;
+    margin: auto;
+    background: white;
+    padding: 35px;
+    border-radius: 14px;
+    box-shadow: 0 10px 35px rgba(0,0,0,0.12);
+}
+h1 {
+    text-align: center;
+    margin-bottom: 10px;
+}
+.subtitle {
+    text-align: center;
+    color: #666;
+    margin-bottom: 30px;
+}
+.section {
+    margin-bottom: 30px;
+}
+.section h3 {
+    border-bottom: 2px solid #4f46e5;
+    padding-bottom: 8px;
+    color: #4f46e5;
+}
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 15px;
+}
+label {
+    font-weight: 600;
+    font-size: 0.9em;
+}
+input, select {
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+button {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1em;
+    font-weight: bold;
+    background: #4f46e5;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+}
+button:hover {
+    background: #4338ca;
+}
+.note {
+    background: #eef2ff;
+    padding: 12px;
+    border-left: 4px solid #4f46e5;
+    margin-bottom: 25px;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h1>Loan Risk Assessment</h1>
+<p class="subtitle">Credit Risk, Pricing & Decision Support</p>
+
+<div class="note">
+<b>Note:</b> All financial values should be entered in <b>Naira (₦)</b>.
+</div>
+
+<form method="post" action="/assess">
+
+<div class="section">
+<h3>👤 Personal Information</h3>
+<div class="grid">
+<input type="text" name="customer_id" placeholder="Customer ID" required>
+<input type="number" name="Age" placeholder="Age" required>
+<input type="number" name="Experience" placeholder="Years of Experience" required>
+</div>
+</div>
+
+<div class="section">
+<h3>💼 Employment & Education</h3>
+<div class="grid">
+<select name="EmploymentStatus">
+<option>Employed</option><option>Self-Employed</option><option>Unemployed</option>
+</select>
+<select name="EducationLevel">
+<option>Bachelor</option><option>Master</option><option>PhD</option>
+</select>
+<input type="number" name="JobTenure" placeholder="Job Tenure (years)">
+</div>
+</div>
+
+<div class="section">
+<h3>💳 Credit Profile</h3>
+<div class="grid">
+<input type="number" name="CreditScore" placeholder="Credit Score">
+<input type="number" step="0.01" name="PaymentHistory" placeholder="Payment History (0–1)">
+<input type="number" name="LengthOfCreditHistory" placeholder="Credit History (years)">
+<input type="number" name="NumberOfOpenCreditLines" placeholder="Open Credit Lines">
+<input type="number" name="NumberOfCreditInquiries" placeholder="Recent Inquiries">
+</div>
+</div>
+
+<div class="section">
+<h3>🏠 Loan Information</h3>
+<div class="grid">
+<input type="number" name="LoanDuration" placeholder="Loan Duration (months)">
+<input type="number" step="0.1" name="BaseInterestRate" placeholder="Base Rate (%)">
+<input type="number" step="0.1" name="InterestRate" placeholder="Applied Rate (%)">
+<select name="LoanPurpose">
+<option>Home</option><option>Auto</option><option>Business</option>
+</select>
+</div>
+</div>
+
+<div class="section">
+<h3>💰 Financial Information (₦)</h3>
+<div class="grid">
+<input type="number" name="MonthlyIncome" placeholder="Monthly Income">
+<input type="number" name="AnnualIncome" placeholder="Annual Income">
+<input type="number" name="LoanAmount" placeholder="Requested Loan Amount">
+<input type="number" name="MonthlyLoanPayment" placeholder="Monthly Loan Payment">
+<input type="number" name="MonthlyDebtPayments" placeholder="Other Monthly Debts">
+</div>
+</div>
+
+<button type="submit">Assess Risk</button>
+
+</form>
+</div>
+</body>
+</html>
+"""
 
 # --------------------------------------------------
-# Business Logic
+# Result Page
 # --------------------------------------------------
 
-def recommend_loan_amount(risk_score, annual_income, existing_monthly_debt, credit_score):
-    base_multiplier = 0.3
-    max_dti_ratio = 0.43
+RESULT_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Risk Result</title>
+<style>
+body { font-family: Segoe UI; background: #f2f4f8; padding: 20px; }
+.card {
+    max-width: 800px; margin: auto; background: white;
+    padding: 30px; border-radius: 14px;
+}
+.header {
+    background: {color}; color: white;
+    padding: 25px; border-radius: 12px; text-align: center;
+}
+.amount { font-size: 2em; font-weight: bold; }
+</style>
+</head>
 
-    risk_adjusted_multiplier = base_multiplier * (1 - risk_score)
+<body>
+<div class="card">
+<div class="header">
+<h2>{customer_id}</h2>
+<p>Risk Score: {risk:.2%}</p>
+<p>{tier} (Grade {grade})</p>
+</div>
 
-    credit_adjustment = (
-        1.2 if credit_score >= 750 else
-        1.1 if credit_score >= 700 else
-        1.0 if credit_score >= 650 else
-        0.8 if credit_score >= 600 else
-        0.6
-    )
+<h3>Decision</h3>
+<p><b>{decision}</b> – {description}</p>
 
-    monthly_income = annual_income / 12
-    max_total_monthly_debt = monthly_income * max_dti_ratio
-    available_payment = max_total_monthly_debt - existing_monthly_debt
+<h3>Recommended Loan</h3>
+<p class="amount">₦{loan:,.2f}</p>
 
-    if available_payment <= 0:
-        return {"recommended_max_loan": 0, "monthly_payment_capacity": 0}
+<h3>Interest Rate</h3>
+<p>{rate}%</p>
 
-    monthly_rate = 0.05 / 12
-    n = 60
+<p><i>Assessed on {time}</i></p>
 
-    max_from_payment = available_payment * (
-        ((1 + monthly_rate) ** n - 1) /
-        (monthly_rate * (1 + monthly_rate) ** n)
-    )
+<a href="/">Assess Another Customer</a>
+</div>
+</body>
+</html>
+"""
 
-    max_from_income = annual_income * risk_adjusted_multiplier * credit_adjustment
-    recommended = min(max_from_payment, max_from_income, annual_income * 0.5)
+# --------------------------------------------------
+# Policy Logic
+# --------------------------------------------------
 
-    return {
-        "recommended_max_loan": max(0, recommended),
-        "monthly_payment_capacity": available_payment
-    }
-
-def get_risk_tier_info(risk_score):
-    if risk_score < 0.3:
-        return ("Low Risk", "A", 0.0, "AUTO_APPROVE", "Excellent credit profile", "#28a745")
-    elif risk_score < 0.5:
-        return ("Medium-Low Risk", "B", 1.0, "APPROVE", "Good credit profile", "#5cb85c")
-    elif risk_score < 0.65:
-        return ("Medium Risk", "C", 2.0, "MANUAL_REVIEW", "Acceptable risk", "#ffc107")
-    elif risk_score < 0.8:
-        return ("Medium-High Risk", "D", 3.5, "MANUAL_REVIEW_REQUIRED", "Elevated risk", "#ff9800")
+def risk_policy(score):
+    if score < 0.3:
+        return ("Low Risk", "A", "APPROVE", "Excellent profile", "#16a34a", 5.0)
+    elif score < 0.6:
+        return ("Medium Risk", "B", "REVIEW", "Moderate risk", "#f59e0b", 7.0)
     else:
-        return ("High Risk", "E", 5.0, "DECLINE", "Significant risk", "#dc3545")
-
-
+        return ("High Risk", "C", "DECLINE", "High default risk", "#dc2626", 10.0)
 
 # --------------------------------------------------
 # Routes
 # --------------------------------------------------
 
-# @app.get("/", response_class=HTMLResponse)
-# def home():
-#     return HOME_TEMPLATE  # noqa: F821
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return HOME_TEMPLATE
 
 @app.post("/assess", response_class=HTMLResponse)
 def assess(
@@ -120,76 +282,62 @@ def assess(
     LengthOfCreditHistory: float = Form(...),
     NumberOfOpenCreditLines: float = Form(...),
     NumberOfCreditInquiries: float = Form(...),
-    PreviousLoanDefaults: float = Form(...),
-    BankruptcyHistory: float = Form(...),
-    UtilityBillsPaymentHistory: float = Form(...),
     LoanDuration: float = Form(...),
     BaseInterestRate: float = Form(...),
     InterestRate: float = Form(...),
-    TotalDebtToIncomeRatio: float = Form(...),
-    MonthlyIncome_log: float = Form(...),
-    AnnualIncome_log: float = Form(...),
-    SavingsAccountBalance_log: float = Form(...),
-    CheckingAccountBalance_log: float = Form(...),
-    NetWorth_log: float = Form(...),
-    TotalAssets_log: float = Form(...),
-    TotalLiabilities_log: float = Form(...),
-    MonthlyLoanPayment_log: float = Form(...),
-    LoanAmount_log: float = Form(...),
-    MonthlyDebtPayments_log: float = Form(...),
+    MonthlyIncome: float = Form(...),
+    AnnualIncome: float = Form(...),
+    LoanAmount: float = Form(...),
+    MonthlyLoanPayment: float = Form(...),
+    MonthlyDebtPayments: float = Form(...),
     EmploymentStatus: str = Form(...),
     EducationLevel: str = Form(...),
-    MaritalStatus: str = Form(...),
-    HomeOwnershipStatus: str = Form(...),
     LoanPurpose: str = Form(...)
 ):
-    features = locals()
-    features.pop("customer_id")
-    features.pop("request", None)
+    features = {
+        "Age": Age,
+        "Experience": Experience,
+        "JobTenure": JobTenure,
+        "CreditScore": CreditScore,
+        "PaymentHistory": PaymentHistory,
+        "LengthOfCreditHistory": LengthOfCreditHistory,
+        "NumberOfOpenCreditLines": NumberOfOpenCreditLines,
+        "NumberOfCreditInquiries": NumberOfCreditInquiries,
+        "LoanDuration": LoanDuration,
+        "BaseInterestRate": BaseInterestRate,
+        "InterestRate": InterestRate,
+        "TotalDebtToIncomeRatio": MonthlyDebtPayments / max(MonthlyIncome, 1),
+        "MonthlyIncome_log": safe_log(MonthlyIncome),
+        "AnnualIncome_log": safe_log(AnnualIncome),
+        "SavingsAccountBalance_log": safe_log(1),
+        "CheckingAccountBalance_log": safe_log(1),
+        "NetWorth_log": safe_log(1),
+        "TotalAssets_log": safe_log(1),
+        "TotalLiabilities_log": safe_log(1),
+        "MonthlyLoanPayment_log": safe_log(MonthlyLoanPayment),
+        "LoanAmount_log": safe_log(LoanAmount),
+        "MonthlyDebtPayments_log": safe_log(MonthlyDebtPayments),
+        "EmploymentStatus": EmploymentStatus,
+        "EducationLevel": EducationLevel,
+        "MaritalStatus": "Single",
+        "HomeOwnershipStatus": "Rent",
+        "LoanPurpose": LoanPurpose
+    }
 
-    df = pd.DataFrame([features])[config["feature_names"]]
-    risk_score = pipeline.predict(df)[0]
+    df = pd.DataFrame([features])[FEATURE_NAMES]
+    risk = float(pipeline.predict(df)[0])
 
-    tier, code, rate_adj, decision, desc, color = get_risk_tier_info(risk_score)
-
-    annual_income = np.exp(AnnualIncome_log)
-    monthly_debt = np.exp(MonthlyDebtPayments_log)
-
-    loan = recommend_loan_amount(risk_score, annual_income, monthly_debt, CreditScore)
+    tier, grade, decision, desc, color, rate = risk_policy(risk)
 
     return RESULT_TEMPLATE.format(
         customer_id=customer_id,
-        risk_score=risk_score,
-        risk_tier=tier,
-        risk_code=code,
-        risk_description=desc,
-        risk_color=color,
+        risk=risk,
+        tier=tier,
+        grade=grade,
         decision=decision,
-        decision_color=color,
-        decision_message=decision.replace("_", " "),
-        max_loan=loan["recommended_max_loan"],
-        monthly_capacity=loan["monthly_payment_capacity"],
-        estimated_payment=loan["monthly_payment_capacity"] * 0.9,
-        base_rate=5.0,
-        adjusted_rate=5.0 + rate_adj,
-        annual_income=annual_income,
-        credit_score=int(CreditScore),
-        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        description=desc,
+        loan=LoanAmount * (1 - risk),
+        rate=rate,
+        color=color,
+        time=datetime.now().strftime("%Y-%m-%d %H:%M")
     )
-
-@app.get("/health")
-def health():
-    return JSONResponse({
-        "status": "healthy",
-        "model_version": config["model_version"],
-        "timestamp": datetime.now().isoformat()
-    })
-
-# --------------------------------------------------
-# Render entry point
-# --------------------------------------------------
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
